@@ -1,0 +1,702 @@
+################################################################################
+## Subnets
+################################################################################
+
+resource "aws_subnet" "private_a" {
+  vpc_id            = var.vpc_id
+  cidr_block        = var.private_subnet_a_cidr_range
+  availability_zone = "ap-southeast-1a"
+  tags = {
+      "Name"                                      = "${var.cluster_name}_private_a"
+      "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+      "kubernetes.io/role/elb"                    = "true"
+      "kubernetes.io/role/internal-elb"           = "true"    
+    }
+}
+
+resource "aws_subnet" "private_b" {
+  vpc_id            = var.vpc_id
+  cidr_block        = var.private_subnet_b_cidr_range
+  availability_zone = "ap-southeast-1b"
+  tags = {
+      "Name"                                      = "${var.cluster_name}_private_b"
+      "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+      "kubernetes.io/role/elb"                    = "true"
+      "kubernetes.io/role/internal-elb"           = "true"
+    }
+}
+
+resource "aws_subnet" "private_c" {
+  vpc_id            = var.vpc_id
+  cidr_block        = var.private_subnet_c_cidr_range
+  availability_zone = "ap-southeast-1c"
+  tags = {
+      "Name"                                      = "${var.cluster_name}_private_c"
+      "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+      "kubernetes.io/role/elb"                    = "true"
+      "kubernetes.io/role/internal-elb"           = "true"
+    }
+}
+
+
+########################
+## Route Tables
+########################
+
+
+resource "aws_route_table_association" "priv_subnet_a" {
+  subnet_id      = aws_subnet.private_a.id
+  route_table_id = var.private_routetable_id
+  depends_on     = [aws_subnet.private_a]
+  # depends_on     = ["aws_subnet.private_a", "aws_route_table.env_private"]
+}
+
+resource "aws_route_table_association" "priv_subnet_b" {
+  subnet_id      = aws_subnet.private_b.id
+  route_table_id = var.private_routetable_id
+  depends_on     = [aws_subnet.private_b]
+  # depends_on     = ["aws_subnet.private_b", "aws_route_table.env_private"]
+}
+
+resource "aws_route_table_association" "priv_subnet_c" {
+  subnet_id      = aws_subnet.private_c.id
+  route_table_id = var.private_routetable_id
+  depends_on     = [aws_subnet.private_c]
+  # depends_on     = ["aws_subnet.private_c", "aws_route_table.env_private"]
+}
+
+################################################################################
+## Secondary Subnets
+################################################################################
+
+resource "aws_subnet" "secondary_private_a" {
+  vpc_id            = var.vpc_id
+  cidr_block        = var.secondary_private_subnet_a_cidr_range
+  availability_zone = "ap-southeast-1a"
+  tags = {
+      "Name"                                      = "${var.cluster_name}_secondary_private_a"
+      "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    }
+}
+
+resource "aws_subnet" "secondary_private_b" {
+  vpc_id            = var.vpc_id
+  cidr_block        = var.secondary_private_subnet_b_cidr_range
+  availability_zone = "ap-southeast-1b"
+  tags = {
+      "Name"                                      = "${var.cluster_name}_secondary_private_b"
+      "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    }
+}
+
+resource "aws_subnet" "secondary_private_c" {
+  vpc_id            = var.vpc_id
+  cidr_block        = var.secondary_private_subnet_c_cidr_range
+  availability_zone = "ap-southeast-1c"
+  tags = {
+      "Name"                                      = "${var.cluster_name}_secondary_private_c"
+      "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    }
+}
+
+resource "aws_route_table_association" "secondary_priv_subnet_a" {
+  subnet_id      = aws_subnet.secondary_private_a.id
+  route_table_id = var.secondary_private_routetable_id
+  depends_on     = [aws_subnet.secondary_private_a]
+  # depends_on     = ["aws_subnet.secondary_private_a", "aws_route_table.env_secondary_private"]
+}
+
+resource "aws_route_table_association" "secondary_priv_subnet_b" {
+  subnet_id      = aws_subnet.secondary_private_b.id
+  route_table_id = var.secondary_private_routetable_id
+  depends_on     = [aws_subnet.secondary_private_b]
+  # depends_on     = ["aws_subnet.secondary_private_b", "aws_route_table.env_secondary_private"]
+}
+
+resource "aws_route_table_association" "secondary_priv_subnet_c" {
+  subnet_id      = aws_subnet.secondary_private_c.id
+  route_table_id = var.secondary_private_routetable_id
+  depends_on     = [aws_subnet.secondary_private_c]
+  # depends_on     = ["aws_subnet.secondary_private_c", "aws_route_table.env_secondary_private"]
+}
+
+#Custom policy for worker nodes
+# resource "aws_iam_policy" "custom_worker_policy" {
+#   name		  = "${var.cluster_name}-custom-worker-policy"
+#   description = "Custom policy for EKS worker nodes"
+#   policy = file("iam-custom-policy.json")
+# }
+
+################################################################################
+# EKS
+################################################################################
+
+module "Centralized-EKS" {
+
+  source                          = "terraform-aws-modules/eks/aws"
+  version                         = "17.20.0"
+  cluster_version                 = "1.33"
+  vpc_id                          = var.vpc_id
+  cluster_name                    = var.cluster_name
+  subnets                         = [aws_subnet.private_a.id, aws_subnet.private_b.id, aws_subnet.private_c.id]
+  # cluster_enabled_log_types       = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+  cluster_endpoint_private_access = true
+  cluster_endpoint_public_access  = false
+  cluster_endpoint_private_access_cidrs = var.api_access_cidr
+  cluster_create_endpoint_private_access_sg_rule = true
+  # kubeconfig_output_path	= "~/.kube/kubeconfig-b"
+  # kubeconfig_aws_authenticator_command = "aws"
+  # kubeconfig_aws_authenticator_command_args = [
+  #     "--region",
+  #     "ap-southeast-1",
+  #     "eks",
+  #     "get-token",
+  #     "--cluster-name",
+  #     "${var.cluster_name}"
+  # ]
+
+
+  # Enable IAM Roles for EKS Service-Accounts (IRSA).
+  enable_irsa = true
+
+  # Do not apply aws_auth by itself - needed to properlly tested this args
+  manage_aws_auth = false
+
+  # Timeout settings for cluster creation
+  cluster_create_timeout = "30m"
+  cluster_delete_timeout = "30m"
+
+  # Add addtional worker nodes policy
+  workers_additional_policies = ["arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore", aws_iam_policy.eks_cluster_kms_read_access.arn]
+	#workers_additional_policies = ["arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore", aws_iam_policy.custom_worker_policy.arn]
+
+  # Kubernetes Worker Nodes
+  worker_groups_launch_template = [
+    {
+      name                          = "infra-WG-A"
+      ami_id                        = var.worker_node_ami
+      # ami_id                        = var.bottlerocket_ami
+      instance_type                 = var.infra_instance_type
+      tags = "${concat(
+          tolist([
+            tomap({"key" = "role", "value" = "infra", "propagate_at_launch" = true}),
+            tomap({"key" = "k8s.io/cluster-autoscaler/enabled", "value" = "true", "propagate_at_launch" = true}),
+            tomap({"key" = "k8s.io/cluster-autoscaler/SCB-SIT-B-EKS", "value" = "owned", "propagate_at_launch" = true})
+          ]),
+          var.common_worker_tags
+        )
+      }"
+      # root_volume_size      = 100
+      root_volume_type      = "gp3"
+		  root_encrypted        = true
+		  root_kms_key_id       = var.ebs_kms_key_id
+      asg_desired_capacity          = 1
+      asg_max_size                  = 10
+      asg_min_size                  = 1
+      kubelet_extra_args            = "${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=ondemand,role=infra,availability_zone=a"
+      # bootstrap_extra_args          = "--container-runtime containerd"
+      subnets                       = [aws_subnet.private_a.id]
+      key_name                      = "system-admin-nonprod-b-key"
+      autoscaling_enabled           = true
+      protect_from_scale_in         = false
+      additional_userdata           = data.template_file.worker-nodes-userdata.rendered
+      
+      # #Bottlerocket
+      # userdata_template_file        = "${path.module}/userdata/bottlerocket-userdata.toml"
+      # userdata_template_extra_args = {
+      #   enable_admin_container   = false
+      #   enable_control_container = true
+      # }
+      # additional_userdata = <<EOT
+      #   [settings.kubernetes.node-labels]
+      #   "node.kubernetes.io/lifecycle" = "ondemand"
+      #   "role" = "infra"
+      #   "availability_zone" = "a"
+      # EOT
+    },
+    {
+      name                          = "infra-WG-B"
+      ami_id                        = var.worker_node_ami
+      # ami_id                        = var.bottlerocket_ami      
+      instance_type                 = var.infra_instance_type
+      tags = "${concat(
+          tolist([
+            tomap({"key" = "role", "value" = "infra", "propagate_at_launch" = true}),
+            tomap({"key" = "k8s.io/cluster-autoscaler/enabled", "value" = "true", "propagate_at_launch" = true}),
+            tomap({"key" = "k8s.io/cluster-autoscaler/SCB-SIT-B-EKS", "value" = "owned", "propagate_at_launch" = true})
+          ]),
+          var.common_worker_tags
+        )
+      }"
+      # root_volume_size      = 100
+      root_volume_type      = "gp3"
+		  root_encrypted        = true
+		  root_kms_key_id       = var.ebs_kms_key_id      
+      asg_desired_capacity          = 1
+      asg_max_size                  = 10
+      asg_min_size                  = 1
+      kubelet_extra_args            = "${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=ondemand,role=infra,availability_zone=b"
+      # bootstrap_extra_args          = "--container-runtime containerd"      
+      subnets                       = [aws_subnet.private_b.id]
+      autoscaling_enabled           = true
+      protect_from_scale_in         = false
+      additional_userdata           = data.template_file.worker-nodes-userdata.rendered
+
+      # #Bottlerocket
+      # userdata_template_file        = "${path.module}/userdata/bottlerocket-userdata.toml"
+      # userdata_template_extra_args = {
+      #   enable_admin_container   = false
+      #   enable_control_container = true
+      # }
+      # additional_userdata = <<EOT
+      #   [settings.kubernetes.node-labels]
+      #   "node.kubernetes.io/lifecycle" = "ondemand"
+      #   "role" = "infra"
+      #   "availability_zone" = "b"
+      # EOT      
+    },
+    {
+      name                          = "infra-WG-C"
+      ami_id                        = var.worker_node_ami
+      # ami_id                        = var.bottlerocket_ami      
+      instance_type                 = var.infra_instance_type
+
+      tags = "${concat(
+          tolist([
+            tomap({"key" = "role", "value" = "infra", "propagate_at_launch" = true}),
+            tomap({"key" = "k8s.io/cluster-autoscaler/enabled", "value" = "true", "propagate_at_launch" = true}),
+            tomap({"key" = "k8s.io/cluster-autoscaler/SCB-SIT-B-EKS", "value" = "owned", "propagate_at_launch" = true})
+          ]),
+          var.common_worker_tags
+        )
+      }"
+      # root_volume_size      = 100
+      root_volume_type      = "gp3"
+		  root_encrypted        = true
+		  root_kms_key_id       = var.ebs_kms_key_id
+      asg_desired_capacity          = 1
+      asg_max_size                  = 10
+      asg_min_size                  = 1
+      kubelet_extra_args            = "${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=ondemand,role=infra,availability_zone=c"
+      # bootstrap_extra_args          = "--container-runtime containerd"
+      subnets                       = [aws_subnet.private_c.id]
+      autoscaling_enabled           = true
+      protect_from_scale_in         = false
+      additional_userdata           = data.template_file.worker-nodes-userdata.rendered
+
+      # #Bottlerocket
+      # userdata_template_file        = "${path.module}/userdata/bottlerocket-userdata.toml"
+      # userdata_template_extra_args = {
+      #   enable_admin_container   = false
+      #   enable_control_container = true
+      # }
+      # additional_userdata = <<EOT
+      #   [settings.kubernetes.node-labels]
+      #   "node.kubernetes.io/lifecycle" = "ondemand"
+      #   "role" = "infra"
+      #   "availability_zone" = "c"
+      # EOT      
+    },
+    {
+      name                     = "APPS-Spot-WG-A"
+      ami_id                   = var.worker_node_ami
+      # ami_id                   = var.bottlerocket_ami
+      instance_type            = var.spot_apps_instance_type
+      # key_name                 = "system-admin-nonprod-b-key"
+
+      tags = "${concat(
+          tolist([
+            tomap({"key" = "role", "value" = "apps", "propagate_at_launch" = true}),
+            tomap({"key" = "k8s.io/cluster-autoscaler/enabled", "value" = "true", "propagate_at_launch" = true}),
+            tomap({"key" = "k8s.io/cluster-autoscaler/SCB-SIT-B-EKS", "value" = "owned", "propagate_at_launch" = true}),
+            tomap({"key" = "aws-node-termination-handler/managed", "value" = "true", "propagate_at_launch" = true})
+          ]),
+          var.common_worker_tags
+        )
+      }"
+      # root_volume_size      = 100
+      root_volume_type      = "gp3"
+		  root_encrypted        = true
+		  root_kms_key_id       = var.ebs_kms_key_id
+      asg_recreate_on_change   = true
+      override_instance_types  = ["m5a.xlarge", "r5ad.xlarge", "i4i.xlarge"]
+      subnets               = [aws_subnet.private_a.id]
+      autoscaling_enabled   = true
+      protect_from_scale_in = false
+      asg_max_size          = 20
+      asg_desired_capacity  = 1
+      asg_min_size          = 1
+      kubelet_extra_args    = "${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=spot,role=apps,availability_zone=a"
+      # bootstrap_extra_args  = "--container-runtime containerd"
+      # Spot settings
+      spot_allocation_strategy = "lowest-price"
+      spot_instance_pools      = 20
+      additional_userdata           = data.template_file.worker-nodes-userdata.rendered
+
+      # #Bottlerocket
+      # userdata_template_file = "${path.module}/userdata/bottlerocket-userdata.toml"
+      # userdata_template_extra_args = {
+      #   enable_admin_container   = false
+      #   enable_control_container = true
+      # }
+      # additional_userdata = <<EOT
+      #   [settings.kubernetes.node-labels]
+      #   "node.kubernetes.io/lifecycle" = "spot"
+      #   "role" = "apps"
+      #   "availability_zone" = "a"
+      # EOT
+    },
+    {
+      name                     = "APPS-Spot-WG-B"
+      ami_id                   = var.worker_node_ami
+      # ami_id                   = var.bottlerocket_ami
+      instance_type            = var.spot_apps_instance_type
+      # key_name                 = "system-admin-nonprod-b-key"
+
+      tags = "${concat(
+          tolist([
+            tomap({"key" = "role", "value" = "apps", "propagate_at_launch" = true}),
+            tomap({"key" = "k8s.io/cluster-autoscaler/enabled", "value" = "true", "propagate_at_launch" = true}),
+            tomap({"key" = "k8s.io/cluster-autoscaler/SCB-SIT-B-EKS", "value" = "owned", "propagate_at_launch" = true}),
+            tomap({"key" = "aws-node-termination-handler/managed", "value" = "true", "propagate_at_launch" = true})
+          ]),
+          var.common_worker_tags
+        )
+      }"
+      # root_volume_size      = 100
+      root_volume_type      = "gp3"
+		  root_encrypted        = true
+		  root_kms_key_id       = var.ebs_kms_key_id
+      asg_recreate_on_change   = true
+      override_instance_types  = ["m5a.xlarge", "r5ad.xlarge", "i4i.xlarge"]
+      subnets               = [aws_subnet.private_b.id]
+      autoscaling_enabled   = true
+      protect_from_scale_in = false
+      asg_max_size          = 20
+      asg_desired_capacity  = 1
+      asg_min_size          = 1
+      kubelet_extra_args    = "${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=spot,role=apps,availability_zone=b"      
+      # bootstrap_extra_args  = "--container-runtime containerd"      
+      # Spot settings
+      spot_allocation_strategy = "lowest-price"
+      spot_instance_pools      = 20
+      additional_userdata      = data.template_file.worker-nodes-userdata.rendered
+
+      # #Bottlerocket
+      # userdata_template_file = "${path.module}/userdata/bottlerocket-userdata.toml"
+      # userdata_template_extra_args = {
+      #   enable_admin_container   = false
+      #   enable_control_container = true
+      # }
+      # additional_userdata = <<EOT
+      #   [settings.kubernetes.node-labels]
+      #   "node.kubernetes.io/lifecycle" = "spot"
+      #   "role" = "apps"
+      #   "availability_zone" = "b"
+      # EOT
+    },
+    {
+      name                     = "APPS-Spot-WG-C"
+      ami_id                   = var.worker_node_ami
+      # ami_id                   = var.bottlerocket_ami
+      instance_type            = var.spot_apps_instance_type
+      # key_name                 = "system-admin-nonprod-b-key"
+
+      tags = "${concat(
+          tolist([
+            tomap({"key" = "role", "value" = "apps", "propagate_at_launch" = true}),
+            tomap({"key" = "k8s.io/cluster-autoscaler/enabled", "value" = "true", "propagate_at_launch" = true}),
+            tomap({"key" = "k8s.io/cluster-autoscaler/SCB-SIT-B-EKS", "value" = "owned", "propagate_at_launch" = true}),
+            tomap({"key" = "aws-node-termination-handler/managed", "value" = "true", "propagate_at_launch" = true})
+          ]),
+          var.common_worker_tags
+        )
+      }"
+      # root_volume_size      = 100
+      root_volume_type      = "gp3"
+		  root_encrypted        = true
+		  root_kms_key_id       = var.ebs_kms_key_id
+      asg_recreate_on_change   = true
+      override_instance_types  = ["m5a.xlarge", "r5ad.xlarge", "i4i.xlarge"]
+      subnets               = [aws_subnet.private_c.id]
+      autoscaling_enabled   = true
+      protect_from_scale_in = false
+      asg_max_size          = 20
+      asg_desired_capacity  = 1
+      asg_min_size          = 1
+      kubelet_extra_args    = "${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=spot,role=apps,availability_zone=c"
+      # bootstrap_extra_args  = "--container-runtime containerd"
+      # Spot settings
+      spot_allocation_strategy = "lowest-price"
+      spot_instance_pools      = 20
+      additional_userdata      = data.template_file.worker-nodes-userdata.rendered
+      
+      # #Bottlerocket
+      # userdata_template_file = "${path.module}/userdata/bottlerocket-userdata.toml"
+      # userdata_template_extra_args = {
+      #   enable_admin_container   = false
+      #   enable_control_container = true
+      # }
+      # additional_userdata = <<EOT
+      #   [settings.kubernetes.node-labels]
+      #   "node.kubernetes.io/lifecycle" = "spot"
+      #   "role" = "apps"
+      #   "availability_zone" = "c"
+      # EOT
+    }    
+    # {
+    #   name                     = "APPS-Windows-Spot-WG-A"
+    #   ami_id                   = var.windows_ami
+    #   instance_type            = var.spot_apps_instance_type
+    #   # key_name                 = "system-admin-nonprod-b-key"
+
+    #   tags = "${concat(
+    #       tolist([
+    #         tomap({"key" = "role", "value" = "apps", "propagate_at_launch" = true}),
+    #         tomap({"key" = "k8s.io/cluster-autoscaler/enabled", "value" = "true", "propagate_at_launch" = true}),
+    #         tomap({"key" = "k8s.io/cluster-autoscaler/SCB-SIT-B-EKS", "value" = "owned", "propagate_at_launch" = true}),
+    #         tomap({"key" = "aws-node-termination-handler/managed", "value" = "true", "propagate_at_launch" = true})
+    #       ]),
+    #       var.common_worker_tags
+    #     )
+    #   }"
+    #   # root_volume_size      = 100
+    #   root_volume_type      = "gp3"
+		#   root_encrypted        = true
+		#   root_kms_key_id       = var.ebs_kms_key_id      
+    #   asg_recreate_on_change   = true
+    #   override_instance_types  = ["m5.2xlarge", "m5a.2xlarge", "m5ad.2xlarge", "m5d.2xlarge"]
+    #   subnets               = [aws_subnet.private_a.id]
+    #   autoscaling_enabled   = true
+    #   protect_from_scale_in = false
+    #   asg_max_size          = 10
+    #   asg_desired_capacity  = 1
+    #   asg_min_size          = 1
+    #   kubelet_extra_args    = "${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=spot,role=apps,availability_zone=a --register-with-taints=os=windows:NoSchedule"
+    #   # Spot settings
+    #   spot_allocation_strategy = "lowest-price"
+    #   spot_instance_pools      = 10
+    #   platform              = "windows"
+    #   pre_userdata = <<-EOT
+    #     Invoke-Expression -Command '[Environment]::SetEnvironmentVariable("EKS_CONTAINER_RUNTIME", "containerd", [System.EnvironmentVariableTarget]::Machine)'
+    #   EOT
+    #   # additional_userdata   = data.template_file.windows-nodes-userdata.rendered 
+    # },
+    # {
+    #   name                     = "APPS-Windows-Spot-WG-B"
+    #   ami_id                   = var.windows_ami
+    #   instance_type            = var.spot_apps_instance_type
+    #   # key_name                 = "system-admin-nonprod-b-key"
+    #   tags = "${concat(
+    #       tolist([
+    #         tomap({"key" = "role", "value" = "apps", "propagate_at_launch" = true}),
+    #         tomap({"key" = "k8s.io/cluster-autoscaler/enabled", "value" = "true", "propagate_at_launch" = true}),
+    #         tomap({"key" = "k8s.io/cluster-autoscaler/SCB-SIT-B-EKS", "value" = "owned", "propagate_at_launch" = true}),
+    #         tomap({"key" = "aws-node-termination-handler/managed", "value" = "true", "propagate_at_launch" = true})
+    #       ]),
+    #       var.common_worker_tags
+    #     )
+    #   }"
+    #   # root_volume_size      = 100
+    #   root_volume_type      = "gp3"
+		#   root_encrypted        = true
+		#   root_kms_key_id       = var.ebs_kms_key_id      
+    #   asg_recreate_on_change   = true
+    #   override_instance_types  = ["m5.2xlarge", "m5a.2xlarge", "m5ad.2xlarge", "m5d.2xlarge"]
+    #   subnets               = [aws_subnet.private_b.id]
+    #   autoscaling_enabled   = true
+    #   protect_from_scale_in = false
+    #   asg_max_size          = 10
+    #   asg_desired_capacity  = 0
+    #   asg_min_size          = 0
+    #   kubelet_extra_args    = "${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=spot,role=apps,availability_zone=b --register-with-taints=os=windows:NoSchedule"
+    #   # Spot settings
+    #   spot_allocation_strategy = "lowest-price"
+    #   spot_instance_pools      = 10
+    #   platform              = "windows"
+    #   pre_userdata = <<-EOT
+    #     Invoke-Expression -Command '[Environment]::SetEnvironmentVariable("EKS_CONTAINER_RUNTIME", "containerd", [System.EnvironmentVariableTarget]::Machine)'
+    #   EOT   
+    #   # additional_userdata   = data.template_file.windows-nodes-userdata.rendered 
+    # },
+    # {
+    #   name                     = "APPS-Windows-Spot-WG-C"
+    #   ami_id                   = var.windows_ami
+    #   instance_type            = var.spot_apps_instance_type
+    #   # key_name                 = "system-admin-nonprod-b-key"
+    #   tags = "${concat(
+    #       tolist([
+    #         tomap({"key" = "role", "value" = "apps", "propagate_at_launch" = true}),
+    #         tomap({"key" = "k8s.io/cluster-autoscaler/enabled", "value" = "true", "propagate_at_launch" = true}),
+    #         tomap({"key" = "k8s.io/cluster-autoscaler/SCB-SIT-B-EKS", "value" = "owned", "propagate_at_launch" = true}),
+    #         tomap({"key" = "aws-node-termination-handler/managed", "value" = "true", "propagate_at_launch" = true})
+    #       ]),
+    #       var.common_worker_tags
+    #     )
+    #   }"
+    #   # root_volume_size      = 100
+    #   root_volume_type      = "gp3"
+		#   root_encrypted        = true
+		#   root_kms_key_id       = var.ebs_kms_key_id      
+    #   asg_recreate_on_change   = true
+    #   override_instance_types  = ["m5.2xlarge", "m5a.2xlarge", "m5ad.2xlarge", "m5d.2xlarge"]
+    #   subnets               = [aws_subnet.private_c.id]
+    #   autoscaling_enabled   = true
+    #   protect_from_scale_in = false
+    #   asg_max_size          = 10
+    #   asg_desired_capacity  = 0
+    #   asg_min_size          = 0
+    #   kubelet_extra_args    = "${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=spot,role=apps,availability_zone=c --register-with-taints=os=windows:NoSchedule"
+    #   # Spot settings
+    #   spot_allocation_strategy = "lowest-price"
+    #   spot_instance_pools      = 10
+    #   platform              = "windows"
+    #   pre_userdata = <<-EOT
+    #     Invoke-Expression -Command '[Environment]::SetEnvironmentVariable("EKS_CONTAINER_RUNTIME", "containerd", [System.EnvironmentVariableTarget]::Machine)'
+    #   EOT      
+    #   # additional_userdata   = data.template_file.windows-nodes-userdata.rendered 
+    # }
+  ]
+
+  node_groups = {
+    # create launch template
+    APPS-NODE = {
+      create_launch_template = true
+      desired_capacity       = 1
+      max_capacity           = 50
+      min_capacity           = 1
+      iam_role_arn = module.Centralized-EKS.worker_iam_role_arn
+      force_update_version = true
+
+      disk_size       = 90
+      disk_type       = "gp3"
+      disk_throughput = 150
+      disk_iops       = 3000
+
+      ami_type = "AL2023_x86_64_STANDARD"
+      ami_release_version = var.worker_node_ami_release_version
+      instance_types = ["m6a.xlarge","m5a.xlarge","r5a.xlarge","r6a.xlarge"]
+      capacity_type  = "SPOT"
+      pre_userdata   = data.template_file.worker-nodes-userdata.rendered
+      metadata_http_put_response_hop_limit = 2
+
+      bootstrap_env = {
+        CONTAINER_RUNTIME = "containerd"
+        USE_MAX_PODS      = false
+      }
+      kubelet_extra_args = "${var.kubelet_additional_args} --max-pods=110"
+      k8s_labels = {
+        role = "apps"
+      }
+      additional_tags = {
+        AdminName = "kaweepol.khajaroenying@scb.co.th"
+        AdminName2 = "suttipot.eksakulkla@scb.co.th"
+        AppName   = "Kubernetes"
+        Environment = "SIT"
+        Company   = "SCB"
+        AppID     = "AP2142"
+      }
+      update_config = {
+        max_unavailable_percentage = 50 # or set `max_unavailable`
+      }
+    }
+    INFRA-NODE = {
+      create_launch_template = true
+      desired_capacity       = 1
+      max_capacity           = 50
+      min_capacity           = 1
+      iam_role_arn = module.Centralized-EKS.worker_iam_role_arn
+      force_update_version = true
+
+      disk_size       = 90
+      disk_type       = "gp3"
+      disk_throughput = 150
+      disk_iops       = 3000
+
+      ami_type = "AL2023_x86_64_STANDARD"
+      ami_release_version = var.worker_node_ami_release_version
+      instance_types = ["m6a.xlarge","m5a.xlarge","r5a.xlarge","r6a.xlarge"]
+      capacity_type  = "SPOT"
+      pre_userdata   = data.template_file.worker-nodes-userdata.rendered
+      metadata_http_put_response_hop_limit = 2
+      
+      bootstrap_env = {
+        CONTAINER_RUNTIME = "containerd"
+        USE_MAX_PODS      = false
+      }
+      kubelet_extra_args = "${var.kubelet_additional_args} --max-pods=110"
+      k8s_labels = {
+        role = "infra"
+      }
+      additional_tags = {
+        AdminName = "kaweepol.khajaroenying@scb.co.th"
+        AdminName2 = "suttipot.eksakulkla@scb.co.th"
+        AppName   = "Kubernetes"
+        Environment = "SIT"
+        Company   = "SCB"
+        AppID     = "AP2142"
+      }
+      update_config = {
+        max_unavailable_percentage = 50 # or set `max_unavailable`
+      }
+    }
+  }
+
+  fargate_profiles = {
+    # iam_role_additional_policies = ["arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"]
+    pbfex-batch-profile = {
+      name = "pbfex-batch-profile"
+      subnets = [aws_subnet.private_a.id,aws_subnet.private_b.id,aws_subnet.private_c.id] 
+      selectors = [
+        {
+          namespace = "pbfex-batch-dev"
+          labels = {
+            role = "apps-pbfex"
+            WorkerType = "fargate"
+          }
+        },
+        {
+          namespace = "pbfex-batch-sit"
+          labels = {
+            role = "apps-pbfex"
+            WorkerType = "fargate"
+          }
+        }
+      ]
+      tags = {
+        Name      = "pbfex-batch-profile"
+        AppName   = "PBFEX"
+      }
+    }
+  }
+}
+
+output "eks_workers_security_group_id" {
+  value      = module.Centralized-EKS.worker_security_group_id
+  depends_on = [module.Centralized-EKS]
+}
+
+output "eks_cluster_security_group_id" {
+  value      = module.Centralized-EKS.cluster_security_group_id
+  depends_on = [module.Centralized-EKS]
+}
+
+output "eks_worker_iam_role_arn" {
+  value      = module.Centralized-EKS.worker_iam_role_arn
+  depends_on = [module.Centralized-EKS]
+}
+
+output "eks_cluster_oidc_issuer_url" {
+  value      = module.Centralized-EKS.cluster_oidc_issuer_url
+  depends_on = [module.Centralized-EKS]
+}
+
+#resource "aws_security_group_rule" "redis_rule" {
+#  type              = "ingress"
+#  from_port         = 6380
+#  to_port           = 6380
+#  protocol          = "tcp"
+#  cidr_blocks       = ["10.254.148.6/32"]
+#  security_group_id = module.Centralized-EKS.worker_security_group_id
+#  description       = "allow_jump_connect_redis_cpx"
+#}
