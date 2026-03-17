@@ -1,0 +1,941 @@
+################################################################################
+# EKS
+################################################################################
+
+data "aws_security_group" "worker_nodes" {
+  id = "sg-0ad52ae182f9e4ea1"	#SCB-UAT-1-EKS-node2023110909105129930000000a
+}
+
+resource "aws_launch_template" "infra_template" {
+  name_prefix   = "${var.cluster_name}-infra-WG-"
+  instance_type = var.infra_instance_type
+  update_default_version = true
+  image_id = var.worker_node_ami
+  #key_name                 = "system-admin-nonprod-key"
+  user_data = base64encode(
+    data.template_file.worker-nodes-userdata-infra.rendered
+  )
+
+  vpc_security_group_ids = [
+    data.aws_security_group.worker_nodes.id
+  ]
+
+  iam_instance_profile {
+    arn = var.IAM_Instance_Profile
+  }
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size           = 100
+      volume_type           = "gp3"
+      encrypted             = true
+      delete_on_termination = true
+      kms_key_id            = var.ebs_kms_key_id
+    }
+  }
+}
+
+
+resource "aws_launch_template" "app_spot_template" {
+  name_prefix = "${var.cluster_name}-APPS-WG-"
+  update_default_version = true
+  instance_type = var.spot_apps_instance_type
+  image_id = var.worker_node_ami
+
+  user_data = base64encode(
+    data.template_file.worker-nodes-userdata-apps.rendered
+  )
+
+  vpc_security_group_ids = [
+    data.aws_security_group.worker_nodes.id
+  ]
+
+  iam_instance_profile {
+    arn = var.IAM_Instance_Profile
+  }
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size           = 100
+      volume_type           = "gp3"
+      encrypted             = true
+      delete_on_termination = true
+      kms_key_id            = var.ebs_kms_key_id
+    }
+  }
+}
+
+
+resource "aws_launch_template" "app_entapi_template" {
+  name_prefix = "${var.cluster_name}-ENTAPI-WG-"
+  update_default_version = true
+  instance_type = var.entapi_apps_instance_type
+  image_id = var.worker_node_ami
+  user_data = base64encode(
+    data.template_file.worker-nodes-userdata-entapi-apps.rendered
+  )
+
+  vpc_security_group_ids = [
+    data.aws_security_group.worker_nodes.id
+  ]
+
+  iam_instance_profile {
+    arn = var.IAM_Instance_Profile
+  }
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size           = 100
+      volume_type           = "gp3"
+      encrypted             = true
+      delete_on_termination = true
+      kms_key_id            = var.ebs_kms_key_id
+    }
+  }
+}
+
+
+resource "aws_launch_template" "app_mem_template" {
+  name_prefix = "${var.cluster_name}-MEM-APPS-WG-"
+  update_default_version = true
+  instance_type = var.apps_instance_type
+  image_id = var.worker_node_ami
+
+  user_data = base64encode(
+    data.template_file.worker-nodes-userdata-mem-apps.rendered
+  )
+
+  vpc_security_group_ids = [
+    data.aws_security_group.worker_nodes.id
+  ]
+
+  iam_instance_profile {
+    arn = var.IAM_Instance_Profile
+  }
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size           = 100
+      volume_type           = "gp3"
+      encrypted             = true
+      delete_on_termination = true
+      kms_key_id            = var.ebs_kms_key_id
+    }
+  }
+}
+
+
+module "Centralized-EKS" {
+
+  source                          = "terraform-aws-modules/eks/aws"
+  version                         = "19.18.0"
+  cluster_version                 = "1.34"
+  vpc_id                          = var.vpc_id
+  cluster_name                    = var.cluster_name
+  subnet_ids                      = [var.SCB-UAT-1-EKS_private_a_id, var.SCB-UAT-1-EKS_private_b_id, var.SCB-UAT-1-EKS_private_c_id]
+  cluster_enabled_log_types       = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+  cluster_endpoint_private_access = true
+  cluster_endpoint_public_access  = false
+  create_kms_key = false  
+  cluster_encryption_config = {
+    
+      provider_key_arn = var.eks_kms_key_id
+      resources        = ["secrets"]
+  }
+
+  # Needed for EKS module Upgrade from 17 to 18
+  prefix_separator                   = ""
+  iam_role_name                      = var.cluster_name
+  cluster_security_group_name        = var.cluster_name
+  cluster_security_group_description = "EKS cluster security group."   
+
+  # Enable IAM Roles for EKS Service-Accounts (IRSA).
+  enable_irsa = true
+
+  # Timeout settings for cluster creation
+  cluster_timeouts = {
+   create = "30m"
+   delete = "30m"
+    }
+
+  # Additional SG for HTTPS
+  node_security_group_additional_rules = {
+    ingress_self_all = {
+      description = "Node to node communication via HTTPS port"
+      protocol    = "tcp"
+      from_port   = 443
+      to_port     = 443
+      type        = "ingress"
+      self        = true
+    }
+    ingress_self_all_80 = {
+      description = "Node to node communication via HTTP port"
+      protocol    = "tcp"
+      from_port   = 80
+      to_port     = 80
+      type        = "ingress"
+      self        = true
+    }        
+  }
+
+  # Kubernetes Worker Nodes
+#######BEGIN nodegroup module V19#######   
+  self_managed_node_group_defaults = {
+
+  create_iam_instance_profile = false
+  iam_instance_profile_arn = var.IAM_Instance_Profile
+  iam_role_additional_policies = {
+    AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+  } 
+  instance_refresh = {
+      strategy = "Rolling"
+      preferences = {
+        min_healthy_percentage = 66
+      }
+      triggers = ["mixed_instances_policy"]
+    }
+  # vpc_security_group_ids = [
+  #   module.Centralized-EKS.cluster_primary_security_group_id,
+  #   module.Centralized-EKS.cluster_security_group_id,
+  # ]
+  
+  }
+
+  self_managed_node_groups = {
+
+    "${var.cluster_name}-infra-WG-A" = {
+      #name          = "${var.cluster_name}-infra-WG-A"
+      subnet_ids    = [var.SCB-UAT-1-EKS_private_a_id]
+      min_size      = 1
+      max_size      = 5
+      desired_size  = 1
+      #ami_id        = var.worker_node_ami
+      create_launch_template = false
+      launch_template_id = aws_launch_template.infra_template.id
+      version = "$Latest"
+      create_iam_instance_profile = false
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      }
+      /*
+      pre_bootstrap_user_data = data.template_file.worker-nodes-userdata-infra.rendered
+      instance_type = var.infra_instance_type
+      #key_name                 = "system-admin-nonprod-key"
+      #bootstrap_extra_args = "--kubelet-extra-args '${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=ondemand,role=infra,availability_zone=a'"
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            delete_on_termination = true
+            encrypted             = true
+            volume_size           = 100
+            volume_type           = "gp3"
+            kms_key_id            = var.ebs_kms_key_id
+          }
+        }
+      }
+      */
+      tags = merge(
+        var.common_worker_tags,
+        {
+          "k8s.io/cluster-autoscaler/enabled" = "true"
+          "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
+          "role" = "infra"
+        },
+      )            
+      use_mixed_instances_policy = false
+      # mixed_instances_policy = {
+      #   instances_distribution = {
+      #     spot_instance_pools = 4
+      #   }
+      #   override = [
+      #     { instance_type = "m5.large" },
+      #     { instance_type = "m5a.large" },
+      #     { instance_type = "m5d.large" },
+      #     { instance_type = "m5ad.large" },
+      #   ]
+      # }
+    }
+
+    "${var.cluster_name}-infra-WG-B" = {
+      #name          = "${var.cluster_name}-infra-WG-B"
+      subnet_ids    = [var.SCB-UAT-1-EKS_private_b_id]
+      min_size      = 1
+      max_size      = 5
+      desired_size  = 1
+      #ami_id        = var.worker_node_ami
+      create_launch_template = false
+      launch_template_id = aws_launch_template.infra_template.id
+      version = "$Latest"
+      create_iam_instance_profile = false
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      }
+      /*
+      pre_bootstrap_user_data = data.template_file.worker-nodes-userdata-infra.rendered
+      instance_type = var.infra_instance_type
+      #key_name                 = "system-admin-nonprod-key"
+      #bootstrap_extra_args = "--kubelet-extra-args '${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=ondemand,role=infra,availability_zone=b'"
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            delete_on_termination = true
+            encrypted             = true
+            volume_size           = 100
+            volume_type           = "gp3"
+            kms_key_id            = var.ebs_kms_key_id
+          }
+        }
+      }
+      */
+      tags = merge(
+        var.common_worker_tags,
+        {
+          "k8s.io/cluster-autoscaler/enabled" = "true"
+          "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
+          "role" = "infra"
+        },
+      ) 
+      use_mixed_instances_policy = false
+      # mixed_instances_policy = {
+      #   instances_distribution = {
+      #     spot_instance_pools = 4
+      #   }
+      #   override = [
+      #     { instance_type = "m5.large" },
+      #     { instance_type = "m5a.large" },
+      #     { instance_type = "m5d.large" },
+      #     { instance_type = "m5ad.large" },
+      #   ]
+      # }
+    } 
+
+    "${var.cluster_name}-infra-WG-C" = {
+      #name          = "${var.cluster_name}-infra-WG-C"
+      subnet_ids    = [var.SCB-UAT-1-EKS_private_c_id]
+      min_size      = 1
+      max_size      = 5
+      desired_size  = 1
+      #ami_id        = var.worker_node_ami
+      create_launch_template = false
+      launch_template_id = aws_launch_template.infra_template.id
+      version = "$Latest"
+      create_iam_instance_profile = false
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      }
+      /*
+      pre_bootstrap_user_data = data.template_file.worker-nodes-userdata-infra.rendered
+      instance_type = var.infra_instance_type
+      #key_name                 = "system-admin-nonprod-key"
+      #bootstrap_extra_args = "--kubelet-extra-args '${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=ondemand,role=infra,availability_zone=c'"
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            delete_on_termination = true
+            encrypted             = true
+            volume_size           = 100
+            volume_type           = "gp3"
+            kms_key_id            = var.ebs_kms_key_id
+          }
+        }
+      }
+      */
+      tags = merge(
+        var.common_worker_tags,
+        {
+          "k8s.io/cluster-autoscaler/enabled" = "true"
+          "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
+          "role" = "infra"
+        },
+      )
+      use_mixed_instances_policy = false
+      # mixed_instances_policy = {
+      #   instances_distribution = {
+      #     spot_instance_pools = 4
+      #   }
+      #   override = [
+      #     { instance_type = "m5.large" },
+      #     { instance_type = "m5a.large" },
+      #     { instance_type = "m5d.large" },
+      #     { instance_type = "m5ad.large" },
+      #   ]
+      # }
+    }
+
+    "${var.cluster_name}-APPS-WG-A" = {
+      #name          = "${var.cluster_name}-APPS-WG-A"
+      subnet_ids    = [var.SCB-UAT-1-EKS_private_a_id]
+      min_size      = 1
+      max_size      = 20
+      desired_size  = 1
+      #ami_id        = var.worker_node_ami
+      #instance_type = var.apps_instance_type
+      create_launch_template = false
+      launch_template_id     = aws_launch_template.app_spot_template.id
+      version = "$Latest"
+      create_iam_instance_profile = false
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      }
+      /*
+      pre_bootstrap_user_data = data.template_file.worker-nodes-userdata-apps.rendered
+      #key_name                 = "system-admin-nonprod-key"
+      #bootstrap_extra_args = "--kubelet-extra-args '${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=ondemand,role=apps,availability_zone=a'"
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            delete_on_termination = true
+            encrypted             = true
+            volume_size           = 100
+            volume_type           = "gp3"
+            kms_key_id            = var.ebs_kms_key_id
+          }
+        }
+      }
+      */
+      tags = merge(
+        var.common_worker_tags,
+        {
+          "k8s.io/cluster-autoscaler/enabled" = "true"
+          "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
+          "role" = "apps"
+        },
+      )             
+      use_mixed_instances_policy = false
+      # mixed_instances_policy = {
+      #   instances_distribution = {
+      #     spot_allocation_strategy = "lowest-price"
+      #     spot_instance_pools = 20
+      #   }
+      #   override = [
+      #     { instance_type = "m5a.xlarge" },
+      #     { instance_type = "m5d.xlarge" },
+      #     { instance_type = "m5.2xlarge" },
+      #     { instance_type = "m5a.2xlarge" },
+      #   ]
+      # }
+    }   
+
+    "${var.cluster_name}-APPS-WG-B" = {
+      #name          = "${var.cluster_name}-APPS-WG-B"
+      subnet_ids    = [var.SCB-UAT-1-EKS_private_b_id]
+      min_size      = 1
+      max_size      = 20
+      desired_size  = 1
+      #ami_id        = var.worker_node_ami
+      #instance_type = var.apps_instance_type
+      create_launch_template = false
+      launch_template_id     = aws_launch_template.app_spot_template.id
+      version = "$Latest"
+      create_iam_instance_profile = false
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      }
+      /*
+      pre_bootstrap_user_data = data.template_file.worker-nodes-userdata-apps.rendered
+      instance_type = var.apps_instance_type
+      #key_name                 = "system-admin-nonprod-key"
+      #bootstrap_extra_args = "--kubelet-extra-args '${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=ondemand,role=apps,availability_zone=b'"
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            delete_on_termination = true
+            encrypted             = true
+            volume_size           = 100
+            volume_type           = "gp3"
+            kms_key_id            = var.ebs_kms_key_id
+          }
+        }
+      }
+      */
+      tags = merge(
+        var.common_worker_tags,
+        {
+          "k8s.io/cluster-autoscaler/enabled" = "true"
+          "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
+          "role" = "apps"
+        },
+      )             
+      use_mixed_instances_policy = false
+      # mixed_instances_policy = {
+      #   instances_distribution = {
+      #     spot_allocation_strategy = "lowest-price"
+      #     spot_instance_pools = 20
+      #   }
+      #   override = [
+      #     { instance_type = "m5a.xlarge" },
+      #     { instance_type = "m5d.xlarge" },
+      #     { instance_type = "m5.2xlarge" },
+      #     { instance_type = "m5a.2xlarge" },
+      #   ]
+      # }
+    }  
+
+    "${var.cluster_name}-APPS-WG-C" = {
+      #name          = "${var.cluster_name}-APP-WG-C"
+      subnet_ids    = [var.SCB-UAT-1-EKS_private_c_id]
+      min_size      = 1
+      max_size      = 20
+      desired_size  = 1
+      #ami_id        = var.worker_node_ami
+      override = {
+        instance_type = "r5a.xlarge"
+      }
+      create_launch_template = false
+      launch_template_id     = aws_launch_template.app_spot_template.id
+      version = "$Latest"
+      create_iam_instance_profile = false
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      }
+      /*
+      pre_bootstrap_user_data = data.template_file.worker-nodes-userdata-apps.rendered
+      #key_name                 = "system-admin-nonprod-key"
+      #bootstrap_extra_args = "--kubelet-extra-args '${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=ondemand,role=apps,availability_zone=c'"
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            delete_on_termination = true
+            encrypted             = true
+            volume_size           = 100
+            volume_type           = "gp3"
+            kms_key_id            = var.ebs_kms_key_id
+          }
+        }
+      }
+      */
+      tags = merge(
+        var.common_worker_tags,
+        {
+          "k8s.io/cluster-autoscaler/enabled" = "true"
+          "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
+          "role" = "apps"
+        },
+      )             
+      use_mixed_instances_policy = false
+      # mixed_instances_policy = {
+      #   instances_distribution = {
+      #     spot_allocation_strategy = "lowest-price"
+      #     spot_instance_pools = 20
+      #   }
+      #   override = [
+      #     { instance_type = "m5a.xlarge" },
+      #     { instance_type = "m5d.xlarge" },
+      #     { instance_type = "m5.2xlarge" },
+      #     { instance_type = "m5a.2xlarge" },
+      #   ]
+      # }
+    } 
+
+    "${var.cluster_name}-ENTAPI-WG-A" = {
+      #name          = "${var.cluster_name}-ENTAPI-WG-A"
+      subnet_ids    = [var.SCB-UAT-1-EKS_private_a_id]
+      min_size      = 1
+      max_size      = 12
+      desired_size  = 1
+      #ami_id        = var.worker_node_ami
+      create_launch_template = false
+      launch_template_id     = aws_launch_template.app_entapi_template.id
+      version = "$Latest"
+      create_iam_instance_profile = false
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      }
+      /*
+      pre_bootstrap_user_data = data.template_file.worker-nodes-userdata-entapi-apps.rendered
+      instance_type = var.entapi_apps_instance_type
+      #key_name                 = "system-admin-nonprod-key"
+      #bootstrap_extra_args = "--kubelet-extra-args '${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=ondemand,role=entapi-apps,availability_zone=a'"
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            delete_on_termination = true
+            encrypted             = true
+            volume_size           = 100
+            volume_type           = "gp3"
+            kms_key_id            = var.ebs_kms_key_id
+          }
+        }
+      }
+      */
+      tags = merge(
+        var.common_worker_tags,
+        {
+          "k8s.io/cluster-autoscaler/enabled" = "true"
+          "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
+          "role" = "entapi-apps"
+        },
+      )             
+      use_mixed_instances_policy = false
+      # mixed_instances_policy = {
+      #   instances_distribution = {
+      #     spot_instance_pools = 4
+      #   }
+      #   override = [
+      #     { instance_type = "m5.large" },
+      #     { instance_type = "m5a.large" },
+      #     { instance_type = "m5d.large" },
+      #     { instance_type = "m5ad.large" },
+      #   ]
+      # }
+    }          
+
+    "${var.cluster_name}-ENTAPI-WG-B" = {
+      #name          = "${var.cluster_name}-ENTAPI-WG-B"
+      subnet_ids    = [var.SCB-UAT-1-EKS_private_b_id]
+      min_size      = 1
+      max_size      = 12
+      desired_size  = 1
+      #ami_id        = var.worker_node_ami
+      create_launch_template = false
+      launch_template_id     = aws_launch_template.app_entapi_template.id
+      version = "$Latest"
+      create_iam_instance_profile = false
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      }
+      /*
+      pre_bootstrap_user_data = data.template_file.worker-nodes-userdata-entapi-apps.rendered
+      instance_type = var.entapi_apps_instance_type
+      #key_name                 = "system-admin-nonprod-key"
+      #bootstrap_extra_args = "--kubelet-extra-args '${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=ondemand,role=entapi-apps,availability_zone=b'"
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            delete_on_termination = true
+            encrypted             = true
+            volume_size           = 100
+            volume_type           = "gp3"
+            kms_key_id            = var.ebs_kms_key_id
+          }
+        }
+      }
+      */
+      tags = merge(
+        var.common_worker_tags,
+        {
+          "k8s.io/cluster-autoscaler/enabled" = "true"
+          "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
+          "role" = "entapi-apps"
+        },
+      )             
+      use_mixed_instances_policy = false
+      # mixed_instances_policy = {
+      #   instances_distribution = {
+      #     spot_instance_pools = 4
+      #   }
+      #   override = [
+      #     { instance_type = "m5.large" },
+      #     { instance_type = "m5a.large" },
+      #     { instance_type = "m5d.large" },
+      #     { instance_type = "m5ad.large" },
+      #   ]
+      # }
+    }
+
+    "${var.cluster_name}-ENTAPI-WG-C" = {
+      #name          = "${var.cluster_name}-ENTAPI-WG-C"
+      subnet_ids    = [var.SCB-UAT-1-EKS_private_c_id]
+      min_size      = 1
+      max_size      = 12
+      desired_size  = 1
+      #ami_id        = var.worker_node_ami
+      create_launch_template = false
+      launch_template_id     = aws_launch_template.app_entapi_template.id
+      version = "$Latest"
+      create_iam_instance_profile = false
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      }
+      /*
+      pre_bootstrap_user_data = data.template_file.worker-nodes-userdata-entapi-apps.rendered
+      instance_type = var.entapi_apps_instance_type
+      #key_name                 = "system-admin-nonprod-key"
+      #bootstrap_extra_args = "--kubelet-extra-args '${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=ondemand,role=entapi-apps,availability_zone=c'"
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            delete_on_termination = true
+            encrypted             = true
+            volume_size           = 100
+            volume_type           = "gp3"
+            kms_key_id            = var.ebs_kms_key_id
+          }
+        }
+      }
+      */
+      tags = merge(
+        var.common_worker_tags,
+        {
+          "k8s.io/cluster-autoscaler/enabled" = "true"
+          "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
+          "role" = "entapi-apps"
+        },
+      )             
+      use_mixed_instances_policy = false
+      # mixed_instances_policy = {
+      #   instances_distribution = {
+      #     spot_instance_pools = 4
+      #   }
+      #   override = [
+      #     { instance_type = "m5.large" },
+      #     { instance_type = "m5a.large" },
+      #     { instance_type = "m5d.large" },
+      #     { instance_type = "m5ad.large" },
+      #   ]
+      # }
+    }
+    "${var.cluster_name}-MEM-APPS-WG-A" = {
+      #name          = "${var.cluster_name}-MEM-WG-A"
+      subnet_ids    = [var.SCB-UAT-1-EKS_private_a_id]
+      min_size      = 0
+      max_size      = 12
+      desired_size  = 0
+      #ami_id        = var.worker_node_ami
+      #instance_type = var.mem_apps_instance_type
+      create_launch_template = false
+      launch_template_id     = aws_launch_template.app_mem_template.id
+      version = "$Latest"
+      create_iam_instance_profile = false
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      }
+      /*
+      pre_bootstrap_user_data = data.template_file.worker-nodes-userdata-mem-apps.rendered
+      #key_name                 = "system-admin-nonprod-key"
+      #bootstrap_extra_args = "--kubelet-extra-args '${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=ondemand,role=mem-apps,availability_zone=a'"
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            delete_on_termination = true
+            encrypted             = true
+            volume_size           = 100
+            volume_type           = "gp3"
+            kms_key_id            = var.ebs_kms_key_id
+          }
+        }
+      }
+      */
+      tags = merge(
+        var.common_worker_tags,
+        {
+          "k8s.io/cluster-autoscaler/enabled" = "true"
+          "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
+          "role" = "mem-apps"
+        },
+      )             
+      use_mixed_instances_policy = false
+      # mixed_instances_policy = {
+      #   instances_distribution = {
+      #     spot_instance_pools = 4
+      #   }
+      #   override = [
+      #     { instance_type = "m5.large" },
+      #     { instance_type = "m5a.large" },
+      #     { instance_type = "m5d.large" },
+      #     { instance_type = "m5ad.large" },
+      #   ]
+      # }
+    }          
+
+    "${var.cluster_name}-MEM-APPS-WG-B" = {
+      #name          = "${var.cluster_name}-MEM-WG-B"
+      subnet_ids    = [var.SCB-UAT-1-EKS_private_b_id]
+      min_size      = 0
+      max_size      = 12
+      desired_size  = 0
+      #ami_id        = var.worker_node_ami
+      #instance_type = var.mem_apps_instance_type
+      create_launch_template = false
+      launch_template_id     = aws_launch_template.app_mem_template.id
+      version = "$Latest"
+      create_iam_instance_profile = false
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      }
+      /*
+      pre_bootstrap_user_data = data.template_file.worker-nodes-userdata-mem-apps.rendered
+      #key_name                 = "system-admin-nonprod-key"
+      #bootstrap_extra_args = "--kubelet-extra-args '${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=ondemand,role=mem-apps,availability_zone=b'"
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            delete_on_termination = true
+            encrypted             = true
+            volume_size           = 100
+            volume_type           = "gp3"
+            kms_key_id            = var.ebs_kms_key_id
+          }
+        }
+      }
+      */
+      tags = merge(
+        var.common_worker_tags,
+        {
+          "k8s.io/cluster-autoscaler/enabled" = "true"
+          "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
+          "role" = "mem-apps"
+        },
+      )             
+      use_mixed_instances_policy = false
+      # mixed_instances_policy = {
+      #   instances_distribution = {
+      #     spot_instance_pools = 4
+      #   }
+      #   override = [
+      #     { instance_type = "m5.large" },
+      #     { instance_type = "m5a.large" },
+      #     { instance_type = "m5d.large" },
+      #     { instance_type = "m5ad.large" },
+      #   ]
+      # }
+    }
+
+    "${var.cluster_name}-MEM-APPS-WG-C" = {
+      #name          = "${var.cluster_name}-MEM-WG-C"
+      subnet_ids    = [var.SCB-UAT-1-EKS_private_c_id]
+      min_size      = 0
+      max_size      = 12
+      desired_size  = 0
+      #ami_id        = var.worker_node_ami
+      override = {
+        instance_type = "r5a.2xlarge"
+      }
+      create_launch_template = false
+      launch_template_id     = aws_launch_template.app_mem_template.id
+      version = "$Latest"
+      create_iam_instance_profile = false
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      }
+      /*
+      pre_bootstrap_user_data = data.template_file.worker-nodes-userdata-mem-apps.rendered
+      #key_name                 = "system-admin-nonprod-key"
+      #bootstrap_extra_args = "--kubelet-extra-args '${var.kubelet_additional_args} --node-labels=node.kubernetes.io/lifecycle=ondemand,role=mem-apps,availability_zone=c'"
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            delete_on_termination = true
+            encrypted             = true
+            volume_size           = 100
+            volume_type           = "gp3"
+            kms_key_id            = var.ebs_kms_key_id
+          }
+        }
+      }
+      */
+      tags = merge(
+        var.common_worker_tags,
+        {
+          "k8s.io/cluster-autoscaler/enabled" = "true"
+          "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
+          "role" = "mem-apps"
+        },
+      )             
+      use_mixed_instances_policy = false
+      # mixed_instances_policy = {
+      #   instances_distribution = {
+      #     spot_instance_pools = 4
+      #   }
+      #   override = [
+      #     { instance_type = "m5.large" },
+      #     { instance_type = "m5a.large" },
+      #     { instance_type = "m5d.large" },
+      #     { instance_type = "m5ad.large" },
+      #   ]
+      # }
+    } 
+  }
+
+  
+ #######END nodegroup module V19#######
+
+  #fargate_profiles = {
+    # iam_role_additional_policies = ["arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"]
+  #  pbfex-batch-profile = {
+  #    name = "pbfex-batch-profile"
+  #    subnets = [aws_subnet.private_a.id,aws_subnet.private_b.id,aws_subnet.private_c.id] 
+  #    selectors = [
+  #      {
+  #         namespace = "pbfex-batch-dev"
+  #         labels = {
+  #           role = "apps-pbfex"
+  #           WorkerType = "fargate"
+  #         }
+  #       },
+  #       {
+  #         namespace = "pbfex-batch-UAT"
+  #         labels = {
+  #           role = "apps-pbfex"
+  #           WorkerType = "fargate"
+  #         }
+  #       }
+  #     ]
+  #     tags = {
+  #       Name      = "pbfex-batch-profile"
+  #       AppName   = "PBFEX"
+  #     }
+  #   }
+
+  #   ddg-batch-profile = {
+  #     name = "ddg-batch-profile"
+  #     subnets = [aws_subnet.secondary_private_a.id,aws_subnet.secondary_private_b.id,aws_subnet.secondary_private_c.id]      
+  #     selectors = [
+  #       {
+  #         namespace = "ddg-batch-dev"
+  #         labels = {
+  #           role = "apps-ddg"
+  #           WorkerType = "fargate"
+  #         }
+  #       },
+  #       {
+  #         namespace = "ddg-batch-UAT"
+  #         labels = {
+  #           role = "apps-ddg"
+  #           WorkerType = "fargate"
+  #         }
+  #       }
+  #     ]
+  #     tags = {
+  #       Name      = "ddg-batch-profile"
+  #       AppName   = "DDG"
+  #     }
+  #   }
+  # }
+
+
+
+}
+
+
+output "eks_cluster_security_group_id" {
+  value      = module.Centralized-EKS.cluster_security_group_id
+  depends_on = [module.Centralized-EKS]
+}
+
+output "eks_node_security_group_id" {
+  value      = module.Centralized-EKS.node_security_group_id
+  depends_on = [module.Centralized-EKS]
+}
+
+output "eks_cluster_oidc_issuer_url" {
+  value      = module.Centralized-EKS.cluster_oidc_issuer_url
+  depends_on = [module.Centralized-EKS]
+}
+
