@@ -1,0 +1,113 @@
+autoDiscovery:
+  clusterName: SCB-PROD-PCI-2-EKS
+
+  # autoDiscovery.tags -- ASG tags to match, run through `tpl`.
+  tags:
+  - k8s.io/cluster-autoscaler/enabled
+  - k8s.io/cluster-autoscaler/{{ .Values.autoDiscovery.clusterName }}
+  # - kubernetes.io/cluster/{{ .Values.autoDiscovery.clusterName }}
+
+  # autoDiscovery.roles -- Magnum node group roles to match.
+  roles:
+  - worker
+
+awsRegion: ap-southeast-1
+awsSecretAccessKey: ""
+cloudProvider: aws
+
+extraArgs:
+  logtostderr: true
+  stderrthreshold: info
+  v: 4
+  # write-status-configmap: true
+  # status-config-map-name: cluster-autoscaler-status
+  # leader-elect: true
+  # leader-elect-resource-lock: endpoints
+  # skip-nodes-with-local-storage: true
+  # expander: random
+  # scale-down-enabled: true
+  balance-similar-node-groups: true
+  # min-replica-count: 0
+  scale-down-utilization-threshold: 0.5
+  # scale-down-non-empty-candidates-count: 30
+  # max-node-provision-time: 15m0s
+  # scan-interval: 10s
+  # scale-down-delay-after-add: 10m
+  # scale-down-delay-after-delete: 0s
+  # scale-down-delay-after-failure: 3m
+  # scale-down-unneeded-time: 10m
+  # skip-nodes-with-system-pods: true
+  # balancing-ignore-label_1: first-label-to-ignore
+  # balancing-ignore-label_2: second-label-to-ignore
+
+image:
+  repository: harbor.scb.co.th/facility/registry.k8s.io/autoscaling/cluster-autoscaler
+  tag: v1.35.0
+
+nodeSelector:
+  role: infra
+
+podDisruptionBudget:
+  maxUnavailable: 1
+  # minAvailable: 2
+
+rbac:
+  create: true
+  pspEnabled: false
+  serviceAccount:
+    annotations: {}
+    create: true
+    name: ""
+    automountServiceAccountToken: true
+
+replicaCount: 1
+
+# resources -- Pod resource requests and limits.
+resources: {}
+  # limits:
+  #   cpu: 100m
+  #   memory: 300Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 300Mi
+
+service:
+  annotations: {}
+  labels: {}
+  externalIPs: []
+  loadBalancerIP: ""
+  loadBalancerSourceRanges: []
+  servicePort: 8085
+  portName: http
+  type: ClusterIP
+
+## Are you using Prometheus Operator?
+serviceMonitor:
+  # serviceMonitor.enabled -- If true, creates a Prometheus Operator ServiceMonitor.
+  enabled: false
+  # serviceMonitor.interval -- Interval that Prometheus scrapes Cluster Autoscaler metrics.
+  interval: 10s
+  # serviceMonitor.namespace -- Namespace which Prometheus is running in.
+  namespace: monitoring
+  ## [Prometheus Selector Label](https://github.com/helm/charts/tree/master/stable/prometheus-operator#prometheus-operator-1)
+  ## [Kube Prometheus Selector Label](https://github.com/helm/charts/tree/master/stable/prometheus-operator#exporters)
+  # serviceMonitor.selector -- Default to kube-prometheus install (CoreOS recommended), but should be set according to Prometheus install.
+  selector:
+    release: prometheus-operator
+  # serviceMonitor.path -- The path to scrape for metrics; autoscaler exposes `/metrics` (this is standard)
+  path: /metrics
+
+## Custom PrometheusRule to be defined
+## The value is evaluated as a template, so, for example, the value can depend on .Release or .Chart
+## ref: https://github.com/coreos/prometheus-operator#customresourcedefinitions
+prometheusRule:
+  # prometheusRule.enabled -- If true, creates a Prometheus Operator PrometheusRule.
+  enabled: false
+  # prometheusRule.additionalLabels -- Additional labels to be set in metadata.
+  additionalLabels: {}
+  # prometheusRule.namespace -- Namespace which Prometheus is running in.
+  namespace: monitoring
+  # prometheusRule.interval -- How often rules in the group are evaluated (falls back to `global.evaluation_interval` if not set).
+  interval: null
+  # prometheusRule.rules -- Rules spec template (see https://github.com/prometheus-operator/prometheus-operator/blob/master/Documentation/api.md#rule).
+  rules: []

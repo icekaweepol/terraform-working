@@ -1,0 +1,8 @@
+# Default revision label for validating webhooks
+defaultRevision: "default"
+
+global:
+  networkPolicy:
+    enabled: false
+  hub: harbor.scb.co.th/facility/istio
+  tag: 1.28.4

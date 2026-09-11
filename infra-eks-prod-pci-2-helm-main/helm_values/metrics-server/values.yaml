@@ -1,0 +1,20 @@
+image:
+  repository: harbor.scb.co.th/facility/k8s.gcr.io/metrics-server/metrics-server
+  tag: "v0.8.1"
+
+serviceAccount:
+  create: true
+
+rbac:
+  create: true
+
+replicas: 1
+
+args:
+  - --metric-resolution=15s
+  - --kubelet-insecure-tls
+  - --kubelet-preferred-address-types=InternalIP
+
+nodeSelector:
+    role: infra  
+

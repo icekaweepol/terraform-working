@@ -1,0 +1,470 @@
+## @section Global parameters
+## Global Docker image parameters
+## Please, note that this will override the image parameters, including dependencies, configured to use the global value
+## Current available global Docker image parameters: imageRegistry, imagePullSecrets and storageClass
+
+## @param global.imageRegistry Global Docker image registry
+## @param global.imagePullSecrets Global Docker registry secret names as an array
+##
+global:
+  imageRegistry: ""
+  ## E.g.
+  ## imagePullSecrets:
+  ##   - myRegistryKeySecretName
+  ##
+  imagePullSecrets: []
+
+## @section Common parameters
+
+## @param nameOverride String to partially override external-dns.fullname template (will maintain the release name)
+##
+nameOverride: ""
+## @param fullnameOverride String to fully override external-dns.fullname template
+##
+fullnameOverride: ""
+## @param clusterDomain Kubernetes Cluster Domain
+##
+clusterDomain: cluster.local
+
+## @section external-dns parameters
+
+## Bitnami external-dns image version
+## ref: https://hub.docker.com/r/bitnami/external-dns/tags/
+## @param image.registry ExternalDNS image registry
+## @param image.repository ExternalDNS image repository
+## @param image.tag ExternalDNS Image tag (immutable tags are recommended)
+## @param image.pullPolicy ExternalDNS image pull policy
+## @param image.pullSecrets ExternalDNS image pull secrets
+##
+image:
+  registry: harbor.scb.co.th
+  repository: facility/bitnami/external-dns
+  tag: 0.10.0-debian-10-r0
+  ## Specify a imagePullPolicy
+  ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
+  ## ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images
+  ##
+  pullPolicy: IfNotPresent
+  ## Optionally specify an array of imagePullSecrets.
+  ## Secrets must be manually created in the namespace.
+  ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+  ## e.g:
+  ## pullSecrets:
+  ##   - myRegistryKeySecretName
+  ##
+  pullSecrets: []
+
+## @param hostAliases Deployment pod host aliases
+## https://kubernetes.io/docs/concepts/services-networking/add-entries-to-pod-etc-hosts-with-host-aliases/
+##
+hostAliases: []
+## @param sources [array] K8s resources type to be observed for new DNS entries by ExternalDNS
+##
+sources:
+  # - crd
+  - service
+  - ingress
+  # - contour-httpproxy
+## @param provider DNS provider where the DNS records will be created.
+## Available providers are:
+## - alibabacloud, aws, azure, azure-private-dns, cloudflare, coredns, designate, digitalocean, google, hetzner, infoblox, linode, rfc2136, transip
+##
+provider: aws
+## Flags related to processing sources
+## ref: https://github.com/kubernetes-sigs/external-dns/blob/master/pkg/apis/externaldns/types.go#L272
+## @param namespace Limit sources of endpoints to a specific namespace (default: all namespaces)
+##
+namespace: ""
+## @param fqdnTemplates Templated strings that are used to generate DNS names from sources that don't define a hostname themselves
+##
+fqdnTemplates: []
+## @param combineFQDNAnnotation Combine FQDN template and annotations instead of overwriting
+##
+combineFQDNAnnotation: false
+## @param ignoreHostnameAnnotation Ignore hostname annotation when generating DNS names, valid only when fqdn-template is set
+##
+ignoreHostnameAnnotation: false
+## @param publishInternalServices Allow external-dns to publish DNS records for ClusterIP services
+##
+publishInternalServices: false
+## @param publishHostIP Allow external-dns to publish host-ip for headless services
+##
+publishHostIP: false
+## @param serviceTypeFilter The service types to take care about (default: all, options: ClusterIP, NodePort, LoadBalancer, ExternalName)
+##
+serviceTypeFilter: []
+## Alibaba cloud configuration to be set via arguments/env. variables
+## These will be added to /etc/kubernetes/alibaba-cloud.json via secret
+##
+
+## AWS configuration to be set via arguments/env. variables
+##
+aws:
+  ## AWS credentials
+  ## @param aws.credentials.secretKey When using the AWS provider, set `aws_secret_access_key` in the AWS credentials (optional)
+  ## @param aws.credentials.accessKey When using the AWS provider, set `aws_access_key_id` in the AWS credentials (optional)
+  ## @param aws.credentials.mountPath When using the AWS provider, determine `mountPath` for `credentials` secret
+  ##
+  credentials:
+    secretKey: ""
+    accessKey: ""
+    ## Before external-dns 0.5.9 home dir should be `/root/.aws`
+    ##
+    mountPath: "/.aws"
+    ## @param aws.credentials.secretName Use an existing secret with key "credentials" defined.
+    ## This ignores aws.credentials.secretKey, and aws.credentials.accessKey
+    ##
+    secretName: ""
+  ## @param aws.region When using the AWS provider, `AWS_DEFAULT_REGION` to set in the environment (optional)
+  ##
+  region: "ap-southeast-1"
+  ## @param aws.zoneType When using the AWS provider, filter for zones of this type (optional, options: public, private)
+  ##
+  zoneType: ""
+  ## @param aws.assumeRoleArn When using the AWS provider, assume role by specifying --aws-assume-role to the external-dns daemon
+  ##
+  assumeRoleArn: ""
+  ## @param aws.apiRetries Maximum number of retries for AWS API calls before giving up
+  ##
+  apiRetries: 3
+  ## @param aws.batchChangeSize When using the AWS provider, set the maximum number of changes that will be applied in each batch
+  ##
+  batchChangeSize: 1000
+  ## @param aws.zoneTags When using the AWS provider, filter for zones with these tags
+  ##
+  zoneTags: []
+  ## @param aws.preferCNAME When using the AWS provider, replaces Alias records with CNAME (options: true, false)
+  ##
+  preferCNAME: ""
+  ## @param aws.evaluateTargetHealth When using the AWS provider, sets the evaluate target health flag (options: true, false)
+  ##
+  evaluateTargetHealth: ""
+## NS1 configuration to be set via arguments/env. variables
+## @param ns1.minTTL When using the ns1 provider, specify minimal TTL, as an integer, for records
+##
+
+## @param dryRun When enabled, prints DNS record changes rather than actually performing them (optional)
+##
+dryRun: false
+## @param triggerLoopOnEvent When enabled, triggers run loop on create/update/delete events in addition to regular interval (optional)
+##
+triggerLoopOnEvent: false
+## @param interval Interval update period to use
+##
+interval: "1m"
+## @param logLevel Verbosity of the logs (options: panic, debug, info, warning, error, fatal, trace)
+##
+logLevel: info
+## @param logFormat Which format to output logs in (options: text, json)
+##
+logFormat: text
+## @param policy Modify how DNS records are synchronized between sources and providers (options: sync, upsert-only )
+##
+policy: upsert-only
+## @param registry Registry method to use (options: txt, aws-sd, noop)
+## ref: https://github.com/kubernetes-sigs/external-dns/blob/master/docs/proposal/registry.md
+##
+registry: "txt"
+## @param txtPrefix When using the TXT registry, a prefix for ownership records that avoids collision with CNAME entries (optional)<CNAME record> (Mutual exclusive with txt-suffix)
+##
+txtPrefix: ""
+## @param txtSuffix When using the TXT registry, a suffix for ownership records that avoids collision with CNAME entries (optional)<CNAME record>.suffix (Mutual exclusive with txt-prefix)
+##
+txtSuffix: ""
+## @param txtOwnerId A name that identifies this instance of ExternalDNS. Currently used by registry types: txt & aws-sd (optional)
+## But other registry types might be added in the future.
+##
+txtOwnerId: "external-dns-private-zone"
+## @param forceTxtOwnerId (backward compatibility) When using the non-TXT registry, it will pass the value defined by `txtOwnerId` down to the application (optional)
+## This setting added for backward compatibility for
+## customers who already used bitnami/external-dns helm chart
+## to privision 'aws-sd' registry type.
+## Previously bitnami/external-dns helm chart did not pass
+## txtOwnerId value down to the external-dns application
+## so the app itself sets that value to be a string 'default'.
+## If existing customers force the actual txtOwnerId value to be
+## passed properly, their external-dns updates will stop working
+## because the owner's value for exting DNS records in
+## AWS Service Discovery would remain 'default'.
+## NOTE: It is up to the end user to update AWS Service Discovery
+## 'default' values in description fields to make it work with new
+## value passed as txtOwnerId when forceTxtOwnerId=true
+forceTxtOwnerId: false
+## @param extraArgs Extra arguments to be passed to external-dns
+##
+extraArgs: {}
+## @param extraEnv Extra environment variables to be passed to external-dns
+##
+## extraEnv:
+## - name: VARNAME1
+##   value: value1
+## - name: VARNAME2
+##   valueFrom:
+##     secretKeyRef:
+##       name: existing-secret
+##       key: varname2-key
+##
+extraEnv: []
+## @param replicas Desired number of ExternalDNS replicas
+##
+replicas: 1
+## @param podAffinityPreset Pod affinity preset. Ignored if `affinity` is set. Allowed values: `soft` or `hard`
+## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#inter-pod-affinity-and-anti-affinity
+##
+podAffinityPreset: ""
+## @param podAntiAffinityPreset Pod anti-affinity preset. Ignored if `affinity` is set. Allowed values: `soft` or `hard`
+## Ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#inter-pod-affinity-and-anti-affinity
+## Allowed values: soft, hard
+##
+podAntiAffinityPreset: soft
+## Node affinity preset
+## Ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#node-affinity
+##
+nodeAffinityPreset:
+  ## @param nodeAffinityPreset.type Node affinity preset type. Ignored if `affinity` is set. Allowed values: `soft` or `hard`
+  ##
+  type: ""
+  ## @param nodeAffinityPreset.key Node label key to match Ignored if `affinity` is set.
+  ## E.g.
+  ## key: "kubernetes.io/e2e-az-name"
+  ##
+  key: ""
+  ## @param nodeAffinityPreset.values Node label values to match. Ignored if `affinity` is set.
+  ## E.g.
+  ## values:
+  ##   - e2e-az1
+  ##   - e2e-az2
+  ##
+  values: []
+## @param affinity Affinity for pod assignment
+## Ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+## Note: podAffinityPreset, podAntiAffinityPreset, and  nodeAffinityPreset will be ignored when it's set
+##
+affinity: {}
+## @param nodeSelector Node labels for pod assignment
+## Ref: https://kubernetes.io/docs/user-guide/node-selection/
+##
+nodeSelector:
+  role: infra
+## @param tolerations Tolerations for pod assignment
+## Ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+##
+tolerations: []
+## @param podAnnotations Additional annotations to apply to the pod.
+##
+podAnnotations: {}
+## @param podLabels Additional labels to be added to pods
+##
+podLabels: {}
+## @param priorityClassName priorityClassName
+##
+priorityClassName: ""
+## @param secretAnnotations Additional annotations to apply to the secret
+##
+secretAnnotations: {}
+## Options for the source type "crd"
+##
+crd:
+  ## @param crd.create Install and use the integrated DNSEndpoint CRD
+  ##
+  create: false
+  ## @param crd.apiversion Sets the API version for the CRD to watch
+  ##
+  apiversion: ""
+  ## @param crd.kind Sets the kind for the CRD to watch
+  ##
+  kind: ""
+## Kubernetes svc configutarion
+##
+service:
+  ## @param service.enabled Whether to create Service resource or not
+  ##
+  enabled: true
+  ## @param service.type Kubernetes Service type
+  ##
+  type: ClusterIP
+  ## @param service.port ExternalDNS client port
+  ##
+  port: 7979
+  ## @param service.nodePort Port to bind to for NodePort service type (client port)
+  ## ref: https://kubernetes.io/docs/concepts/services-networking/service/#type-nodeport
+  ##
+  nodePort: ""
+  ## @param service.clusterIP IP address to assign to service
+  ##
+  clusterIP: ""
+  ## @param service.externalIPs Service external IP addresses
+  ##
+  externalIPs: []
+  ## @param service.loadBalancerIP IP address to assign to load balancer (if supported)
+  ##
+  loadBalancerIP: ""
+  ## @param service.loadBalancerSourceRanges List of IP CIDRs allowed access to load balancer (if supported)
+  ##
+  loadBalancerSourceRanges: []
+  ## @param service.annotations Annotations to add to service
+  ## set the LoadBalancer service type to internal only.
+  ## ref: https://kubernetes.io/docs/concepts/services-networking/service/#internal-load-balancer
+  ##
+  annotations: {}
+  ## @param service.labels Provide any additional labels which may be required.
+  ## This can be used to have external-dns show up in `kubectl cluster-info`
+  ##  kubernetes.io/cluster-service: "true"
+  ##  kubernetes.io/name: "external-dns"
+  ##
+  labels: {}
+## ServiceAccount parameters
+## https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
+##
+serviceAccount:
+  ## @param serviceAccount.create Determine whether a Service Account should be created or it should reuse a exiting one.
+  ##
+  create: true
+  ## @param serviceAccount.name ServiceAccount to use. A name is generated using the external-dns.fullname template if it is not set
+  ##
+  name: ""
+  ## @param serviceAccount.annotations Additional Service Account annotations
+  ##
+  #move to helm.tf in helm_release
+  #annotations:
+  #  eks.amazonaws.com/role-arn: "arn:aws:iam::652707267819:role/EKS_SIT_external_dns_internal_zone_role"
+
+  ## @param serviceAccount.automountServiceAccountToken Automount API credentials for a service account.
+  ##
+  automountServiceAccountToken: true
+## RBAC parameters
+## https://kubernetes.io/docs/reference/access-authn-authz/rbac/
+##
+rbac:
+  ## @param rbac.create Whether to create & use RBAC resources or not
+  ##
+  create: true
+  ## @param rbac.clusterRole Whether to create Cluster Role. When set to false creates a Role in `namespace`
+  ##
+  clusterRole: true
+  ## @param rbac.apiVersion Version of the RBAC API
+  ##
+  apiVersion: v1
+  ## @param rbac.pspEnabled PodSecurityPolicy
+  ##
+  pspEnabled: false
+## @param securityContext Security context for the container
+## https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+## Example:
+## securityContext:
+##   allowPrivilegeEscalation: false
+##   readOnlyRootFilesystem: true
+##   capabilities:
+##     drop: ["ALL"]
+##
+securityContext: {}
+## @param podSecurityContext.fsGroup Group ID for the container
+## @param podSecurityContext.runAsUser User ID for the container
+##
+podSecurityContext:
+  fsGroup: 1001
+  runAsUser: 1001
+## Container resource requests and limits
+## ref: http://kubernetes.io/docs/user-guide/compute-resources/
+## We usually recommend not to specify default resources and to leave this as a conscious
+## choice for the user. This also increases chances charts run on environments with little
+## resources, such as Minikube. If you do want to specify resources, uncomment the following
+## lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+## @param resources.limits The resources limits for the container
+## @param resources.requests The requested resources for the container
+##
+resources:
+  ## Example:
+  ## limits:
+  ##    cpu: 50m
+  ##    memory: 50Mi
+  limits: {}
+  ## Examples:
+  ## requests:
+  ##    cpu: 10m
+  ##    memory: 50Mi
+  requests: {}
+## Configure extra options for liveness probe
+## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/#configure-probes
+## @param livenessProbe.enabled Enable livenessProbe
+## @param livenessProbe.httpGet.path Request path for livenessProbe
+## @param livenessProbe.httpGet.port Port for livenessProbe
+## @param livenessProbe.initialDelaySeconds Initial delay seconds for livenessProbe
+## @param livenessProbe.periodSeconds Period seconds for livenessProbe
+## @param livenessProbe.timeoutSeconds Timeout seconds for livenessProbe
+## @param livenessProbe.failureThreshold Failure threshold for livenessProbe
+## @param livenessProbe.successThreshold Success threshold for livenessProbe
+##
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 2
+  successThreshold: 1
+## Configure extra options for readiness probe
+## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/#configure-probes
+## @param readinessProbe.enabled Enable readinessProbe
+## @param readinessProbe.httpGet.path Request path for readinessProbe
+## @param readinessProbe.httpGet.port Port for readinessProbe
+## @param readinessProbe.initialDelaySeconds Initial delay seconds for readinessProbe
+## @param readinessProbe.periodSeconds Period seconds for readinessProbe
+## @param readinessProbe.timeoutSeconds Timeout seconds for readinessProbe
+## @param readinessProbe.failureThreshold Failure threshold for readinessProbe
+## @param readinessProbe.successThreshold Success threshold for readinessProbe
+##
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+  successThreshold: 1
+## @param extraVolumes A list of volumes to be added to the pod
+##
+extraVolumes: []
+## @param extraVolumeMounts A list of volume mounts to be added to the pod
+##
+extraVolumeMounts: []
+## @param podDisruptionBudget Configure PodDisruptionBudget
+## ref: https://kubernetes.io/docs/tasks/run-application/configure-pdb/
+podDisruptionBudget: {}
+## Prometheus Exporter / Metrics
+##
+metrics:
+  ## @param metrics.enabled Enable prometheus to access external-dns metrics endpoint
+  ##
+  enabled: false
+  ## @param metrics.podAnnotations Annotations for enabling prometheus to access the metrics endpoint
+  ##
+  podAnnotations: {}
+  ## Prometheus Operator ServiceMonitor configuration
+  ##
+  serviceMonitor:
+    ## @param metrics.serviceMonitor.enabled Create ServiceMonitor object
+    ##
+    enabled: false
+    ## @param metrics.serviceMonitor.namespace Namespace in which Prometheus is running
+    ##
+    namespace: ""
+    ## @param metrics.serviceMonitor.interval Interval at which metrics should be scraped
+    ## ref: https://github.com/coreos/prometheus-operator/blob/master/Documentation/api.md#endpoint
+    ##
+    interval: ""
+    ## @param metrics.serviceMonitor.scrapeTimeout Timeout after which the scrape is ended
+    ## ref: https://github.com/coreos/prometheus-operator/blob/master/Documentation/api.md#endpoint
+    ##
+    scrapeTimeout: ""
+    ## @param metrics.serviceMonitor.selector Additional labels for ServiceMonitor object
+    ## ref: https://github.com/bitnami/charts/tree/master/bitnami/prometheus-operator#prometheus-configuration
+    ## e.g:
+    ## selector:
+    ##   prometheus: my-prometheus
+    ##
+    selector: {}

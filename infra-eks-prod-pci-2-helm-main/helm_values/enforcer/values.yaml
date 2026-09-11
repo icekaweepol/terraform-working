@@ -1,0 +1,25 @@
+imageCredentials:
+  repositoryUriPrefix: "harbor.scb.co.th" 
+  registry: "harbor.scb.co.th"
+
+enforcerToken: "XXXXXXXXXXXXXXXXXX"
+
+gate:
+  host: aquasec-gateway-dev.se.scb.co.th
+  port: 443
+
+image:
+  repository: facility/aqua/enforcer
+  tag: "6.2.21242"
+  pullPolicy: IfNotPresent
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+privileged: true
+

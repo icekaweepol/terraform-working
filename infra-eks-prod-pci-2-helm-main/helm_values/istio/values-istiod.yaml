@@ -1,0 +1,55 @@
+image: pilot
+hub: harbor.scb.co.th/facility/istio
+tag: "1.28.4"
+
+global:
+  hub: harbor.scb.co.th/facility/istio
+  tag: "1.28.4"     
+  proxy:
+    image: proxyv2
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 2
+        memory: 1Gi
+
+  networkPolicy:
+    enabled: false
+
+meshConfig:
+  accessLogFile: "/dev/stdout"
+  accessLogEncoding: JSON
+  defaultConfig:
+    holdApplicationUntilProxyStarts: true
+
+pilot:
+  replicaCount: 2
+  autoscaleEnabled: false
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2048Mi
+
+  nodeSelector:
+    role: infra
+
+  # injection should be explicit
+  sidecarInjectorWebhook:
+    enableNamespacesByDefault: false
+
+  env:
+    ISTIO_META_DNS_CAPTURE: "false"
+    ENABLE_GATEWAY_API: "true"
+
+  traceSampling: 0.0
+
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app: istiod

@@ -1,0 +1,153 @@
+/*
+This jenkinsfile is designed to be run inside a dedicated repo that contains terraform resource definitions.
+This file requires that some variables are set in Jenkins as secrets.
+This file should be run by a multi-branch pipeline, so that branches in active development run linting and show the delta for changes. Only the master branch will allow application of config.
+By allowing only master to run an 'apply' you keep the state file clean and safe without conflict.
+*/
+
+String jenkinsSlaveLabel = 'production-redhat-aws-01-newekspci'
+
+pipeline {
+    // Dont change this. This agent definition keeps the pipeline jobs using up nodes for management.
+    agent { label jenkinsSlaveLabel }
+
+
+    //Tools used by the pipeline go here. The assumption is that these tools are defined in Jenkins Global tool configuration. The names can be changed if required.
+    tools {
+        git 'Default'
+        // 'org.jenkinsci.plugins.terraform.TerraformInstallation' 'terraform'
+    }
+
+    parameters {
+        // Default to Tools-EKS cluster
+        string(
+            name: 'EKS_CLUSTER_NAME',
+            defaultValue: 'SCB-PROD-PCI-2-EKS',
+            description: 'Where should I deploy the application to?'
+        )
+        string(
+            name: 'AWS_ACCOUNT_ID',
+            defaultValue: '099115147891',
+            description: 'AWS Account ID'
+        )
+    }
+
+    options {
+        // TS
+        timestamps()
+
+        // ANSI Log
+        ansiColor('xterm')
+
+        buildDiscarder(logRotator(numToKeepStr: '10',artifactDaysToKeepStr: '7', artifactNumToKeepStr: '1'))
+        timeout(time: 60, unit: 'MINUTES')
+
+        // by disabling concurrent builds, you ensure that 2 competing jobs on master cant accidentally be started and possible disrupt the statefile.
+        disableConcurrentBuilds()
+    }
+
+        /* Define environment variables for all steps */
+    environment {
+        harbor_url = 'harbor.scb.co.th/'
+        image_version = 'library/terraform:1.0.9'
+        // dockeroption = '-u $(id -u):$(id -g) -v /etc/group:/etc/group:ro -v /etc/passwd:/etc/passwd:ro -v /etc/shadow:/etc/shadow:ro -v $SSH_AUTH_SOCK:/ssh-agent -e SSH_AUTH_SOCK=/ssh-agent -v $HOME:$HOME:ro'
+        dockeroption = '-u $(id -u):$(id -g) -v /etc/group:/etc/group:ro -v /etc/passwd:/etc/passwd:ro -v /etc/shadow:/etc/shadow:ro -v $SSH_AUTH_SOCK:/ssh-agent -e SSH_AUTH_SOCK=/ssh-agent -v $HOME:$HOME:rw'
+        terraform_command = 'docker run ' + "${env.dockeroption}" +' --entrypoint /bin/sh --rm -v ${PWD}:/terraform -w /terraform ' + "${env.harbor_url}" + "${env.image_version} -c"
+        emailReceiver = 's25570@scb.co.th'
+
+    }
+
+
+    stages {
+        // stage('Azure Login') {
+        //     steps {
+        //         dir("terraform"){                                  
+        //                 sh """
+        //                     rm -rf ~/.azure/ ~/.kube/
+        //                     eval $(aws sts assume-role --role-arn arn:aws:iam::443446075394:role/SCB-UAT-B-EKS-jumpbox --role-session-name temp-EKS-B | jq -r '.Credentials | "export AWS_ACCESS_KEY_ID=\(.AccessKeyId)\nexport AWS_SECRET_ACCESS_KEY=\(.SecretAccessKey)\nexport AWS_SESSION_TOKEN=\(.SessionToken)\n"')
+        //                     aws eks update-kubeconfig --name SCB-UAT-B-EKS  --region ap-southeast-1 --kubeconfig ./kubeconfig_helm
+        //                 """
+        //         }
+
+        //     }
+        // }        
+        // This stage tests whether changes need to be made by Terraform, and then evaluates if there is a requirement to run an "apply"
+        stage ('Apply kubectl') {
+            agent { label jenkinsSlaveLabel }
+            when {
+                expression {
+                    return env.GIT_BRANCH.equals('origin/main')
+                }
+            }
+             steps {
+                sh("""
+                    echo "kubernetes part"
+                """)
+                // Setup cluster access    
+                sh("""
+                    kubectl config unset clusters
+                    rm -f /home/jenkinsekspci/.kube/config
+                    aws eks update-kubeconfig --name ${EKS_CLUSTER_NAME} --profile eks-prod-pci --region ap-southeast-1
+                """)
+            }
+        }        
+        stage ('Plan') {
+            steps {
+                //Clean my workspace as a good first step, then checkout
+                deleteDir()
+                checkout scm
+
+                // ansiColor('xterm') {                
+                //     sh """  
+                //         ${env.terraform_command} 'terraform init && \
+                //         terraform plan -out tfplan' 
+                         
+                //     """ 
+                // }
+
+                ansiColor('xterm') {                
+                    sh """  
+                        terraform_1.08 init && \
+                        terraform_1.08 plan -out tfplan
+                    """ 
+                }
+
+            }
+        }
+
+        stage('Apply') {
+            input {
+                message 'Please check plan before apply'
+                ok 'Apply terraform'
+            }
+            steps {
+                ansiColor('xterm') {
+                //   sh "${env.terraform_command} 'terraform apply tfplan'"
+                  sh "terraform_1.08 apply tfplan"
+                }
+            }
+        }   
+
+        // aws-auth.yaml
+//        stage ('Apply kubectl') {
+//            agent { label jenkinsSlaveLabel }
+//            when {
+//                expression {
+//                    return env.GIT_BRANCH.equals('origin/main')
+//                }
+//            }
+//            steps {
+        //         // Templating aws-auth.yaml
+//                sh("""
+//                    echo "kubernetes part"
+//                """)
+//                // Setup cluster access    
+//                sh("""
+//                    kubectl config unset clusters
+//                    rm -f /home/jenkinsekspci/.kube/config
+//                    aws eks update-kubeconfig --name ${EKS_CLUSTER_NAME} --profile eks-prod-pci --region ap-southeast-1
+//                """)
+//            }
+//        }
+    }
+}
